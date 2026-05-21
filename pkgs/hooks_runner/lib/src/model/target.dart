@@ -8,9 +8,15 @@ import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 
 final class Target implements Comparable<Target> {
-  final Abi abi;
+  final Abi? _abi;
 
-  const Target._(this.abi);
+  final Architecture? _architecture;
+
+  final OS? _os;
+
+  const Target._(Abi abi) : _abi = abi, _architecture = null, _os = null;
+
+  const Target._custom(this._architecture, this._os) : _abi = null;
 
   factory Target.fromString(String target) => _stringToTarget[target]!;
 
@@ -49,6 +55,12 @@ final class Target implements Comparable<Target> {
     );
   }
 
+  Abi get abi =>
+      _abi ??
+      (throw UnsupportedError(
+        'No dart:ffi Abi constant is available for $this.',
+      ));
+
   static const androidArm = Target._(Abi.androidArm);
   static const androidArm64 = Target._(Abi.androidArm64);
   static const androidIA32 = Target._(Abi.androidIA32);
@@ -62,6 +74,7 @@ final class Target implements Comparable<Target> {
   static const linuxArm = Target._(Abi.linuxArm);
   static const linuxArm64 = Target._(Abi.linuxArm64);
   static const linuxIA32 = Target._(Abi.linuxIA32);
+  static const linuxLoong64 = Target._custom(Architecture.loong64, OS.linux);
   static const linuxRiscv32 = Target._(Abi.linuxRiscv32);
   static const linuxRiscv64 = Target._(Abi.linuxRiscv64);
   static const linuxX64 = Target._(Abi.linuxX64);
@@ -85,6 +98,7 @@ final class Target implements Comparable<Target> {
     linuxArm,
     linuxArm64,
     linuxIA32,
+    linuxLoong64,
     linuxRiscv32,
     linuxRiscv64,
     linuxX64,
@@ -111,9 +125,9 @@ final class Target implements Comparable<Target> {
   /// Read from the [Platform.version] string.
   static final Target current = Target.fromDartPlatform(Platform.version);
 
-  Architecture get architecture => Architecture.fromAbi(abi);
+  Architecture get architecture => _architecture ?? Architecture.fromAbi(abi);
 
-  OS get os => {
+  OS get os => _os ?? {
     Abi.androidArm: OS.android,
     Abi.androidArm64: OS.android,
     Abi.androidIA32: OS.android,
