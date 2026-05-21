@@ -32,6 +32,12 @@ void main() {
     final current = Target.fromDartPlatform(Platform.version);
     expect(current.toString(), Abi.current().toString());
     expect(
+      Target.fromDartPlatform(
+        '3.13.0 (stable) (Tue May 19 00:00:00 2026 +0000) on "linux_loong64"',
+      ),
+      Target.linuxLoong64,
+    );
+    expect(
       () => Target.fromDartPlatform('bogus'),
       throwsA(
         predicate(
@@ -67,6 +73,10 @@ void main() {
       Target.macOSArm64.supportedTargetTargets(),
       contains(Target.iOSArm64),
     );
+    expect(
+      Target.linuxX64.supportedTargetTargets(),
+      contains(Target.linuxLoong64),
+    );
   });
 
   test('Target fromArchitectureAndOS', () async {
@@ -75,6 +85,10 @@ void main() {
       OS.current,
     );
     expect(current.toString(), Abi.current().toString());
+    expect(
+      Target.fromArchitectureAndOS(Architecture.loong64, OS.linux),
+      Target.linuxLoong64,
+    );
 
     expect(
       () => Target.fromArchitectureAndOS(Architecture.arm, OS.windows),
