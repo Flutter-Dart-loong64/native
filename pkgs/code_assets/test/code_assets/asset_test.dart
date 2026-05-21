@@ -155,4 +155,9 @@ void main() {
     final current = Architecture.current;
     expect(current.toString(), Abi.current().toString().split('_')[1]);
   });
+
+  test('Architecture loong64', () {
+    expect(Architecture.fromString('loong64'), Architecture.loong64);
+    expect(Architecture.values, contains(Architecture.loong64));
+  });
 }
