@@ -1,7 +1,11 @@
-## 0.19.1-wip
+## 0.19.2
+
+- Fixed compatibility with newer Xcode versions when cross-compiling static libraries on macOS hosts targeting Android and Linux.
+
+## 0.19.1
 
 - Added support for passing sanitizer flags (`-fsanitize=address`, `-fsanitize=memory`, `-fsanitize=thread`) to C compilers and linkers.
-- Depend on `package:code_assets` `^1.2.0-wip`.
+- Depend on `package:code_assets` `^1.2.0`.
 
 ## 0.19.0
 

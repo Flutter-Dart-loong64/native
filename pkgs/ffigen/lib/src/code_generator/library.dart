@@ -74,6 +74,12 @@ class Library {
       (loadFromNativeAsset ? nativeBindings : lookupBindings).add(binding);
     }
     final noLookUpBindings = bindings.whereType<NoLookUpBinding>().toList();
+    final hasNoLookupNativeHelper = noLookUpBindings.any(
+      (b) => b.hasNativeHelperFunctions,
+    );
+    if (hasNoLookupNativeHelper) {
+      nativeAssetId = outputStyleAssetId;
+    }
 
     final writer = Writer(
       lookUpBindings: lookupBindings,
@@ -128,6 +134,24 @@ class Library {
 
     if (!file.existsSync()) file.createSync(recursive: true);
     file.writeAsStringSync(objCString);
+    return true;
+  }
+
+  /// Generates [file] with the Cpp glue code needed for the bindings, if any.
+  ///
+  /// Returns whether bindings were generated.
+  bool generateCppFile(File file) {
+    final cppString = writer.generateCpp(file.path);
+
+    if (cppString == null) {
+      // No C++ glue needed. If there's already a file (eg from an earlier
+      // run), delete it so it's not accidentally included in the build.
+      if (file.existsSync()) file.deleteSync();
+      return false;
+    }
+
+    if (!file.existsSync()) file.createSync(recursive: true);
+    file.writeAsStringSync(cppString);
     return true;
   }
 

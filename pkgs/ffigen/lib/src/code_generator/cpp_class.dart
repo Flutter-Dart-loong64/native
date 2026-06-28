@@ -16,7 +16,7 @@ enum CppMethodKind { constructor, destructor, method }
 
 /// A method or constructor belonging to a C++ class.
 class CppMethod extends AstNode with HasLocalScope {
-  final String name;
+  final Symbol name;
   final String originalName;
   final Type returnType;
   final List<Parameter> parameters;
@@ -34,8 +34,8 @@ class CppMethod extends AstNode with HasLocalScope {
     this.kind = CppMethodKind.method,
   });
 
-  bool get isConstructor => kind == CppMethodKind.constructor;
-  bool get isDestructor => kind == CppMethodKind.destructor;
+  bool get isConstructor => kind == .constructor;
+  bool get isDestructor => kind == .destructor;
 
   @override
   void visit(Visitation visitation) => visitation.visitCppMethod(this);
@@ -43,6 +43,7 @@ class CppMethod extends AstNode with HasLocalScope {
   @override
   void visitChildren(Visitor visitor) {
     super.visitChildren(visitor);
+    visitor.visit(name);
     visitor.visit(returnType);
     visitor.visitAll(parameters);
   }
@@ -100,9 +101,16 @@ class CppClass extends BindingType with HasLocalScope {
 
     final ptrVoid = '$ffiPrefix.Pointer<$ffiPrefix.Void>';
 
-    final classMethods = methods
-        .where((m) => m.kind == CppMethodKind.method)
-        .toList();
+    // Helper to build a comma-separated Dart parameter list.
+    String dartParamList(Iterable<Parameter> params) =>
+        params.map((p) => '${p.type.getDartType(ctx)} ${p.name}').join(', ');
+
+    final classMethods = methods.where((m) => m.kind == .method).toList();
+    final constructors = methods.where((m) => m.kind == .constructor).toList();
+    final destructor = methods.where((m) => m.kind == .destructor).singleOrNull;
+
+    final deleteSymbol = '${name}_delete';
+    final deleteGlue = '_$deleteSymbol';
 
     s.write(makeDartDoc(dartDoc));
     s.write('''
@@ -113,12 +121,39 @@ class $name {
   $name._(this._ptr);
 ''');
 
-    for (final method in classMethods) {
-      final glue = '_${name}_${method.name}';
-      final dartReturn = method.returnType.getDartType(ctx);
-      final dartParams = method.parameters
-          .map((p) => '${p.type.getDartType(ctx)} ${p.name}')
+    for (final ctor in constructors) {
+      final glueName = ctor.name.name;
+      final privateName = '_$glueName';
+
+      final dartParams = dartParamList(ctor.parameters);
+
+      final localVars = LocalVariables(ctor.localScope);
+      final callArgs = ctor.parameters
+          .map(
+            (p) => p.type.sameDartAndFfiDartType
+                ? p.name
+                : p.type.convertDartTypeToFfiDartType(
+                    ctx,
+                    p.name,
+                    objCRetain: false,
+                    objCAutorelease: false,
+                    localVariables: localVars,
+                  ),
+          )
           .join(', ');
+
+      s.write('''
+  factory $name($dartParams) {
+    ${localVars.generateDeclarations()}
+    return $name._($privateName($callArgs));
+  }
+''');
+    }
+
+    for (final method in classMethods) {
+      final glue = '_${method.name.name}';
+      final dartReturn = method.returnType.getDartType(ctx);
+      final dartParams = dartParamList(method.parameters);
 
       final callArgs = [
         if (!method.isStatic) '_ptr',
@@ -127,40 +162,66 @@ class $name {
 
       final staticKeyword = method.isStatic ? 'static ' : '';
       s.write(
-        '  $staticKeyword$dartReturn ${method.name}($dartParams)'
+        '  $staticKeyword$dartReturn ${method.originalName}($dartParams)'
         ' => $glue($callArgs);\n',
       );
     }
+    if (destructor != null) {
+      s.write('  void dispose() => $deleteGlue(_ptr);\n');
+    } else {
+      s.write('  void dispose() {}\n');
+    }
     s.write('}\n');
 
-    for (final method in classMethods) {
-      final symbol = '${name}_${method.name}';
-      final glue = '_$symbol';
-
-      final cReturn = method.returnType.getCType(ctx);
-      final cParams = [
-        if (!method.isStatic) ptrVoid,
-        ...method.parameters.map((p) => p.type.getCType(ctx)),
-      ].join(', ');
-      final cType = '$cReturn Function($cParams)';
-
-      final ffiReturn = method.returnType.getFfiDartType(ctx);
-      final ffiParams = [
-        if (!method.isStatic) '$ptrVoid self',
-        ...method.parameters.map(
-          (p) => '${p.type.getFfiDartType(ctx)} ${p.name}',
-        ),
-      ].join(', ');
-
+    // Writes a @Native annotation + external declaration for a glue function.
+    void writeNativeDecl({
+      required String symbol,
+      required String glue,
+      required String cType,
+      required String ffiReturn,
+      required String ffiParams,
+    }) {
       s.write(
         makeNativeAnnotation(
           w,
           nativeType: cType,
           dartName: glue,
-          nativeSymbolName: symbol,
+          nativeSymbolName: Namer.cSafeName(symbol),
         ),
       );
       s.write('\nexternal $ffiReturn $glue($ffiParams);\n\n');
+    }
+
+    for (final method in methods) {
+      final symbol = method.name.name;
+      final glue = '_$symbol';
+
+      final cReturn = method.isConstructor
+          ? ptrVoid
+          : method.returnType.getCType(ctx);
+      final ffiReturn = method.isConstructor
+          ? ptrVoid
+          : method.returnType.getFfiDartType(ctx);
+
+      final needsSelf = !method.isConstructor && !method.isStatic;
+      final cParams = [
+        if (needsSelf) ptrVoid,
+        ...method.parameters.map((p) => p.type.getCType(ctx)),
+      ].join(', ');
+      final ffiParams = [
+        if (needsSelf) '$ptrVoid self',
+        ...method.parameters.map(
+          (p) => '${p.type.getFfiDartType(ctx)} ${p.name}',
+        ),
+      ].join(', ');
+
+      writeNativeDecl(
+        symbol: symbol,
+        glue: glue,
+        cType: '$cReturn Function($cParams)',
+        ffiReturn: ffiReturn,
+        ffiParams: ffiParams,
+      );
     }
 
     return BindingString(
@@ -169,8 +230,72 @@ class $name {
     );
   }
 
+  /// Returns the C++ function bodies for this class's bindings.
+  ///
+  /// The `#include` preamble and `extern "C"` block are emitted once by
+  /// [Writer.generateCpp]; this method returns only the bodies to
+  /// be placed inside that block.
+  @override
+  String? toCppBindingString(Writer w) {
+    if (methods.isEmpty) return null;
+
+    final context = w.context;
+    String paramDecl(Parameter p) =>
+        p.type.getNativeType(context, varName: p.name).trim();
+
+    return '${methods.map((method) {
+      final symbol = method.name.name;
+      final callArgs = method.parameters.map((p) => p.name).join(', ');
+
+      final String returnTypeString;
+      final String params;
+      final String body;
+
+      if (method.isConstructor) {
+        returnTypeString = '$originalName*';
+        params = method.parameters.map(paramDecl).join(', ');
+        body = 'return new $originalName($callArgs);';
+      } else if (method.isDestructor) {
+        returnTypeString = 'void';
+        params = '$originalName* self';
+        body = 'delete self;';
+      } else {
+        final nativeType = method.returnType.getNativeType(context);
+        returnTypeString = nativeType.trim();
+        final needsReturn = method.returnType != voidType;
+        final returnPrefix = needsReturn ? 'return ' : '';
+
+        final otherParams = method.parameters.map(paramDecl);
+
+        if (method.isStatic) {
+          params = otherParams.join(', ');
+          body = '$returnPrefix$originalName::'
+              '${method.originalName}($callArgs);';
+        } else {
+          final String selfType;
+          if (method.isConstant) {
+            selfType = 'const $originalName';
+          } else {
+            selfType = originalName;
+          }
+          params = ['$selfType* self', ...otherParams].join(', ');
+          body = '${returnPrefix}self->${method.originalName}($callArgs);';
+        }
+      }
+
+      return '''
+FFIGEN_EXPORT $returnTypeString $symbol($params) {
+  $body
+}''';
+    }).join('\n\n')}\n\n';
+  }
+
   @override
   String getCType(Context context) => name;
+
+  @override
+  String getNativeType(Context context, {String varName = ''}) =>
+      varName.isEmpty ? originalName : '$originalName $varName';
 
   @override
   bool get sameFfiDartAndCType => true;
@@ -179,6 +304,9 @@ class $name {
 
   @override
   bool get sameDartAndFfiDartType => false;
+
+  @override
+  bool get hasNativeHelperFunctions => methods.isNotEmpty;
 
   @override
   void visitChildren(Visitor visitor) {

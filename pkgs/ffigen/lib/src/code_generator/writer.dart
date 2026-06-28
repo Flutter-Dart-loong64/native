@@ -103,7 +103,10 @@ class Writer {
     // avoids duplicating the asset on every element.
     // Since the annotation goes on a `library;` directive, it needs to appear
     // before other definitions in the file.
-    if (ffiNativeBindings.isNotEmpty && nativeAssetId != null) {
+    final hasNativeBindings =
+        ffiNativeBindings.isNotEmpty ||
+        noLookUpBindings.any((b) => b.hasNativeHelperFunctions);
+    if (hasNativeBindings && nativeAssetId != null) {
       final ffiPrefix = context.libs.prefix(ffiImport);
       result
         ..writeln("@$ffiPrefix.DefaultAsset('$nativeAssetId')")
@@ -407,6 +410,41 @@ id objc_retainBlock(id);
 
 #pragma clang diagnostic pop
 ''');
+
+    return empty ? null : s.toString();
+  }
+
+  /// Writes the Cpp glue code needed for the bindings, if any. Returns null
+  /// if there are no CppClass bindings.
+  String? generateCpp(String outFilename) {
+    final s = StringBuffer();
+    final outDir = p.dirname(outFilename);
+    // Emit each entry-point header exactly once.
+    for (final header in context.config.headers.entryPoints) {
+      s.write('#include "${p.relative(header.toFilePath(), from: outDir)}"\n');
+    }
+    s.write(r'''
+
+#if defined(_WIN32)
+#define FFIGEN_EXPORT __declspec(dllexport)
+#else
+#define FFIGEN_EXPORT
+#endif
+
+extern "C" {
+
+''');
+
+    var empty = true;
+    for (final binding in _allBindings) {
+      final cppBindingString = binding.toCppBindingString(this);
+      if (cppBindingString != null) {
+        empty = false;
+        s.write(cppBindingString);
+      }
+    }
+
+    s.write('}\n');
 
     return empty ? null : s.toString();
   }
