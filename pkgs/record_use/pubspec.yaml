@@ -1,6 +1,6 @@
 name: record_use
 description: >
-  The serialization logic and API for the usage recording SDK feature.
+  Dart API to access `@RecordUse()` recorded usages in link hooks.
 version: 1.0.0-wip
 repository: https://github.com/dart-lang/native/tree/main/pkgs/record_use
 
@@ -11,7 +11,7 @@ resolution: workspace
 
 dependencies:
   collection: ^1.19.1
-  meta: ^1.17.0
+  meta: ^1.19.0
   pub_semver: ^2.2.0
 
 dev_dependencies:
