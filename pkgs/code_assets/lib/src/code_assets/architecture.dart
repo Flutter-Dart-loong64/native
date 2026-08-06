@@ -14,7 +14,7 @@ final class Architecture {
   const Architecture._(this.name);
 
   /// The [Architecture] corresponding to the given [abi].
-  factory Architecture.fromAbi(Abi abi) => _abiToArch[abi]!;
+  factory Architecture.fromAbi(Abi abi) => _abiToArch[abi] ?? _fromAbi(abi);
 
   /// The [arm](https://en.wikipedia.org/wiki/ARM_architecture_family)
   /// architecture.
@@ -32,6 +32,10 @@ final class Architecture {
   /// The [RISC-V](https://en.wikipedia.org/wiki/RISC-V) 64 bit architecture.
   static const Architecture riscv64 = Architecture._('riscv64');
 
+  /// The [LoongArch](https://loongson.github.io/LoongArch-Documentation/)
+  /// 64 bit architecture.
+  static const Architecture loong64 = Architecture._('loong64');
+
   /// The [x86-64](https://en.wikipedia.org/wiki/X86-64) architecture.
   static const Architecture x64 = Architecture._('x64');
 
@@ -40,6 +44,7 @@ final class Architecture {
     arm,
     arm64,
     ia32,
+    loong64,
     riscv32,
     riscv64,
     x64,
@@ -70,6 +75,17 @@ final class Architecture {
     Abi.windowsX64: Architecture.x64,
   };
 
+  static Architecture _fromAbi(Abi abi) {
+    final normalized = abi.toString().toLowerCase();
+    if (normalized.endsWith('_loong64') ||
+        normalized.endsWith('.linuxloong64') ||
+        normalized.endsWith('_loongarch64') ||
+        normalized.endsWith('.linuxloongarch64')) {
+      return loong64;
+    }
+    throw FormatException('The ABI "$abi" is not known');
+  }
+
   /// The name of this [Architecture].
   ///
   /// This returns a stable string that can be used to construct an
@@ -85,7 +101,7 @@ final class Architecture {
       ArchitectureSyntaxExtension.fromSyntax(ArchitectureSyntax.fromJson(name));
 
   /// The current [Architecture].
-  static final Architecture current = _abiToArch[Abi.current()]!;
+  static final Architecture current = Architecture.fromAbi(Abi.current());
 }
 
 /// Extension methods for [Architecture] to convert to and from the syntax.
